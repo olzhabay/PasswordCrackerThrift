@@ -1,0 +1,241 @@
+#######################################################
+# BDSA Lab
+#
+# Homework 02 - Distributed PasswordCracker using Thrift 
+#######################################################
+
+This directory contains the files that you will use to build and run the PasswordCrackerThrift. 
+
+In this assignment (PasswordCrackerThrift) you will learn to understand and implement Remote Procedure Call (RPC)
+with Thrift framework.
+
+***********
+1. Overview
+***********
+In this assignment, you will implement PasswordCracker (refer to assignment 1) using Thrift 
+
+The Apache "Thrift"[1][2] framework provides a simple way to implement RPC in multiple programming languages
+including Java, Python, C++, and Ruby. In Thrift you write the high-level descriptions of RPC and the message structures;
+then Thrift engine (compiler) generates the low-level code for data serialization, communication, Remote Procedure Calls, etc.
+
+You can refer to [1,2] to learn what Thrift is and how it can be used.
+
+[1] https://thrift.apache.org/
+[2] https://en.wikipedia.org/wiki/Apache_Thrift
+
+----
+1.1. Distributed PasswordCracker Using Thrift
+----
+
+The given template code has three components -- Master, Client, and Worker.
+Master is implemented in PasswordCrackerClient/PasswordCrackerClient.java
+Client is implemented in PasswordCrackerMaster/PasswordCrackerMaster.java
+Worker is implemented in PasswordCrackerWorker/PasswordCrackerWorker.java
+
+1.1.1. Interactions between Master, Client, and Workers.
+
+1) Client invokes a method in Master (via RPC) and gives the encrypted password to compute the password.
+   This RPC call to Master does not return until Master sends back the password.
+
+2) Master, upon receiving the encrypted password from Client, requests Workers to start computing the password.
+
+3) Workers receive the encrypted password as well as their assigned ranges of candidate passwords from Master.
+   The workers compute the password in parallel; if one of the workers find the password, it sends the password to back to Master.
+   Then Master singals other workers to stop the computation.
+   
+4) Master returns the password back to Client.
+
+1.1.2 Termination Signal.
+
+1) Master : Once a master receives the termination signal from a worker, the master sends the termination signal to other active workers.
+2) Worker : a) When a worker discovers the password, it sends the password along with the job ID (or encryptedPassword) to Master.
+            b) Master sends termination signal and the job ID(or encryptedPassword) to all other workers except the one that finds the password.
+            c) When workers receive the termination signal and the corresponding job ID(or encryptedpassword) from Master, they must stop processing the job.
+               Then the workers wait for other job if another job is not.
+
+1.1.3 HeartBeat 
+
+Workers periodically send Master heartbeats, which imply that the workers are functioning properly.
+If Master does not receive heartbeat from any workers for 5 seconds,
+the worker is considered dead.
+Then, it reassigns the job, which was originally assigned to the dead worker, to other workers. 
+
+****
+2. What you need to implement
+****
+
+We provide template code to help students with the implementation.
+You will find comments with COMPLETE (all in capital).
+You are required to implement the necessary code in those locations.
+
+'PasswordCrackerClinet' program
+In PasswordCrackerClient.java
+
+ 1) PasswordCrackerClient class
+  - main()  (You can change the port)
+
+'PasswordCrackerMaster' program
+In PasswordCrackerMasterServiceHandler.java
+
+ 1) PasswordCrackerMasterServiceHandler class
+  - deycrypt(String encryptedPassword).
+  - reportHeartBeat(String workerAddress).
+  - redistributeFailedTask(ArrayList<Integer> failedWorkerIdList).
+  - checkHeartBeat().
+
+ 2) FindPasswordMethodCallback class
+  - onComplete(PasswordCrackerWorkerService.AsyncClient.startFindPasswordInRange_call startFindPasswordInRange_call).
+  - jobTermination().
+
+In PasswordDecrypterJob.java
+ 
+ - getPassword()
+ - setPassword()
+
+'PasswordCrackerWorker' program
+In PasswordCrackerUtil.java
+
+  1) PasswordCrackerUtil.class
+   - findPasswordInRange(long rangeBegin, long rangeEnd, String encryptedPassword, TerminationChecker terminationChecker).
+   - transformDecToBase36(long numInDec, int[] numArrayInBase36).
+
+In PasswordCrackerWorkerServiceHandler.java
+
+  1) PasswordCrackerWorkerServiceHandler.class
+   - reportTermination(String jobId).
+   - startFindPasswordInRange(long rangeBegin, long rangeEnd, String encryptedPassword).
+
+****
+3. Files
+****
+The ./PasswordCrackerInThrift directory contains the following project:
+PasswordCrackerClient, PasswordCrackerMaster, PasswordCrackerWorker
+
+----
+3.1 PasswordCrackerClient
+----
+The ./PasswordCrackerInThrift/PasswordCrackerClient/package/src directory contains the following files:
+
+PasswordCrackerClient.java	- Source Code For main routine.
+
+----
+3.2 PasswordCrackerMaster
+----
+The ./PasswordCrackerInThrift/PasswordCrackerMaster/package/src directory contains the following files:
+
+PasswordCrackerConsts.java	- Source code for PasswordCrackerMaster's constant value.
+PasswordCrackerMasterServiceHandler.java  - Source code for Remote procedure call between master and client, between master and worker.
+PasswordCrackerMasterMain.java  - Source code for main routine. 	
+PasswordCrackerTransport.java  - Source code for connection between the master and workers.
+PasswordDecrypterJob.java  - Source code for complete the job (finding password) and wait if the job don't terminate,
+
+----
+3.3 PasswordCrackerWorker
+----
+The ./PasswordCrackerInThrift/PasswordCrackerWorker/package/src directory contains the following files:
+
+PasswordCrackerConsts.java  - Source code for PasswordCrackerWorker's constant value.
+PasswordCrackerUtil.java  - Source code for finding the original strings (or passwor).
+PasswordCrackerWorkerMain.java - Source code for main routine, connection between master and worker, heartbeat.
+PasswordCrackerWorkerServiceHandler.java  - Source code for Remote procedure call between master and workers and early termination.
+
+and You can see the thriftCode folder.
+
+- PasswordCrackerMasterService.thrift
+- PasswordCrackerWorkerService.thrift 
+
+refer to .thrift source code to know the RPC relationship
+
+********
+4. Build
+********
+If you enter the ant command in each project, it will be executed.
+and you should change the parameter in build.xml
+
+********
+5. Usage Example
+********
+You must run the programs in the following order.
+a master run -> 1 or n of workers run -> 1 or n or clients run
+
+The number of workers can be adjusted by a master sourse code (via PasswordCrackerConsts)
+
+command line master> java -jar PasswordCrackerMaster.jar masterPort
+command line worker> java -jar PasswordCrackerWorker.jar masterAddress masterPort workerPort
+commain line client> java -jar PasswordCrackerClient.jar masterAddress masterPort encryptedPassword
+
+ex)
+command line master> java -jar PasswordCrackerMaster.jar 8000
+command line worker1> java -jar PasswordCrackerWorker.jar 10.20.10.1 8001 7000
+command line worker2> java -jar PasswordCrackerWorker.jar 10.20.10.1 8001  7000
+commain line client> java -jar PasswordCrackerClient.jar 10.20.10.1 8000 c4b9942f2886cd34fce932f279000ef3
+
+Although the above example is a Java command, we recommend using ant.
+You can do this simply by changing the parameter values in build.xml
+
+
+********
+6. Requirements
+********
+
+- You write the worker ipAddress WorkerInfoList.json in PasswordCrackerMaster folder.
+
+- You should see the template code method. 
+
+- The program must support early termination.
+  ex) if one worker discovers the password, then all workers immediately stop the current job computation and wait for other jobs if another job is not.
+
+- The program must support heartbeat and redistribute function if one worker is deaded.
+
+- You must be able to compute concurrently several jobs (computed original password in given solution space)
+  ex) compute concurrently c4b9942f2886cd34fce932f279000ef3 and f92f8fa7fd6a5fa45d53227ffec0d6ac. 
+
+  command line master> java -jar PasswordCrackerMaster.jar 2 8000
+  command line worker1> java -jar PasswordCrackerWorker.jar 10.20.10.1 8000 7000
+  command line worker2> java -jar PasswordCrackerWorker.jar 10.20.10.1 8000 7000
+  commain line client1> java -jar PasswordCrackerClient.jar 10.20.10.1 8000 c4b9942f2886cd34fce932f279000ef3
+  commain line client2> java -jar PasswordCrackerClient.jar 10.20.10.1 8000 f92f8fa7fd6a5fa45d53227ffec0d6ac
+
+ Although the above example is a Java command, we recommend using ant.
+ You can do this simply by changing the parameter values in build.xml
+
+- You must avoid poor naming and code design.
+
+- The output format is free, but you should report that you can verify that the functions you have performed are working properly.
+
+- You must submit the files and report (.pdf)
+
+- you must follow file(.tar.gz) and report (.pdf) this form:
+
+assign#_studentNumber.tar.gz, assign#_studentNumber.pdf
+
+and submit the two files (assign#_studentNumber.tar.gz, assign#_studentNumber.pdf)
+
+ex) Folder : PasswordCrackerThrift, Compression fileName : 1_20160000.tar.gz
+
+- you must use 'ant' because I will do the check for ant, but I recommend Eclipse or IntelliJ for testing purposes.
+
+
+*********
+7. Submission
+*********
+
+You ust submit the report for this assignment as well as your source code.
+The report must be in PDF format and include the following:
+
+- Capture the output that you can verify that the functions you have performed are working properly. (early Termination, HeartBeat etc...)
+
+- Describe the code you have implemented.
+
+
+**********
+8. Grade
+**********
+
+Report 20% (tentative)
+
+Code Implementation and correct execution 80% (tentative)
+
+If you have any questions, Please send an email to bongki@unist.ac.kr
+
+
