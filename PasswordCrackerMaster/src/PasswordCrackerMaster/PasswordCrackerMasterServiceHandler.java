@@ -29,6 +29,36 @@ public class PasswordCrackerMasterServiceHandler implements PasswordCrackerMaste
     public static ConcurrentHashMap<String, Long> latestHeartbeatInMillis = new ConcurrentHashMap<>(); // <workerAddress, time>
     public static ExecutorService workerPool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2);
     public static ScheduledExecutorService heartBeatCheckPool = Executors.newScheduledThreadPool(1);
+    public static ConcurrentHashMap<String, JobInfo> workersRange = new ConcurrentHashMap<>(); // <worker address, job information>
+
+
+    /*
+     * Class to track job information of worker
+     */
+    static class JobInfo {
+
+        private long rangeBegin;
+        private long rangeSize;
+        private String encryptedPassword;
+
+        JobInfo(long rangeBegin, long rangeSize, String encryptedPassword) {
+            this.rangeBegin = rangeBegin;
+            this.rangeSize = rangeSize;
+            this.encryptedPassword = encryptedPassword;
+        }
+
+        public long getRangeBegin() {
+            return rangeBegin;
+        }
+
+        public long getRangeSize() {
+            return rangeSize;
+        }
+
+        public String getEncryptedPassword() {
+            return encryptedPassword;
+        }
+    }
 
     /*
      * The decrypt method create the job and put the job with jobId (encrypted Password) in map.
@@ -40,7 +70,7 @@ public class PasswordCrackerMasterServiceHandler implements PasswordCrackerMaste
         PasswordDecrypterJob decryptJob = new PasswordDecrypterJob();
         jobInfoMap.put(encryptedPassword, decryptJob);
         /** COMPLETE **/
-        requestFindPassword(encryptedPassword, 0, (long) Math.pow(36, 6));
+        requestFindPassword(encryptedPassword, 0, PasswordCrackerConts.TOTAL_PASSWORD_RANGE_SIZE);
         return decryptJob.getPassword();
     }
 
@@ -58,7 +88,7 @@ public class PasswordCrackerMasterServiceHandler implements PasswordCrackerMaste
      * The requestFindPassword requests workers to find password using RPC in asynchronous way.
     */
     public static void requestFindPassword(String encryptedPassword, long rangeBegin, long subRangeSize) {
-        PasswordCrackerWorkerService.AsyncClient worker = null;
+        PasswordCrackerWorkerService.AsyncClient worker;
         FindPasswordMethodCallback findPasswordCallBack = new FindPasswordMethodCallback(encryptedPassword);
         try {
             int workerId = 0;
@@ -66,6 +96,8 @@ public class PasswordCrackerMasterServiceHandler implements PasswordCrackerMaste
 
                 long subRangeBegin = rangeBegin + (workerId * subRangeSize);
                 long subRangeEnd = subRangeBegin + subRangeSize;
+                JobInfo range = new JobInfo(subRangeBegin, subRangeSize, encryptedPassword);
+                workersRange.put(workerAddress, range);
 
                 worker = new PasswordCrackerWorkerService.AsyncClient(new TBinaryProtocol.Factory(), new TAsyncClientManager(), new TNonblockingSocket(workerAddress, WORKER_PORT));
                 worker.startFindPasswordInRange(subRangeBegin, subRangeEnd, encryptedPassword, findPasswordCallBack);
@@ -85,9 +117,16 @@ public class PasswordCrackerMasterServiceHandler implements PasswordCrackerMaste
      *
      * Check the checkHeartBeat method
      */
-    public static void redistributeFailedTask(ArrayList<Integer> failedWorkerIdList) {
+    public static void redistributeFailedTask(ArrayList<String> failedWorkerIdList) {
         /** COMPLETE **/
-
+        ArrayList<JobInfo> redistributionRanges = new ArrayList<>();
+        for (String workerAddress:failedWorkerIdList) {
+            redistributionRanges.add(workersRange.get(workerAddress));
+            workersAddressList.remove(workerAddress);
+            workersRange.remove(workerAddress);
+        }
+        redistributionRanges.forEach((JobInfo job) ->
+                requestFindPassword(job.getEncryptedPassword(), job.getRangeBegin(), job.getRangeSize()));
     }
 
     /*
@@ -103,13 +142,11 @@ public class PasswordCrackerMasterServiceHandler implements PasswordCrackerMaste
      */
     public static void checkHeartBeat() {
         /** COMPLETE **/
-        int workerId = 0;
         final long thresholdAge = 5_000;
-
-        ArrayList<Integer> failedWorkerIdList = new ArrayList<>();
+        ArrayList<String> failedWorkerIdList = new ArrayList<>();
         latestHeartbeatInMillis.forEach((String node, Long time) -> {
             if (System.currentTimeMillis() - time > thresholdAge) {
-                failedWorkerIdList.add(workersAddressList.indexOf(node));
+                failedWorkerIdList.add(node);
             }
         });
         if (!failedWorkerIdList.isEmpty()) {
@@ -119,7 +156,8 @@ public class PasswordCrackerMasterServiceHandler implements PasswordCrackerMaste
 }
 
 //CallBack
-class FindPasswordMethodCallback implements AsyncMethodCallback<PasswordCrackerWorkerService.AsyncClient.startFindPasswordInRange_call> {
+class FindPasswordMethodCallback implements
+        AsyncMethodCallback<PasswordCrackerWorkerService.AsyncClient.startFindPasswordInRange_call> {
     private String jobId;
 
     FindPasswordMethodCallback(String jobId) {
@@ -157,8 +195,10 @@ class FindPasswordMethodCallback implements AsyncMethodCallback<PasswordCrackerW
         try {
             PasswordCrackerWorkerService.AsyncClient worker = null;
             for (String workerAddress : workersAddressList) {
-                worker = new PasswordCrackerWorkerService.
-                        AsyncClient(new TBinaryProtocol.Factory(), new TAsyncClientManager(), new TNonblockingSocket(workerAddress, WORKER_PORT));
+                worker = new PasswordCrackerWorkerService.AsyncClient(
+                        new TBinaryProtocol.Factory(),
+                        new TAsyncClientManager(),
+                        new TNonblockingSocket(workerAddress, WORKER_PORT));
                 /** COMPLETE **/
                 worker.reportTermination(jobId, this);
             }
