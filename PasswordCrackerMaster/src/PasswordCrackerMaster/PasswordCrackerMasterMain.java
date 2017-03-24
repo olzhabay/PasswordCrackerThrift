@@ -17,7 +17,7 @@ public class PasswordCrackerMasterMain {
         try {
             JSONParser parser = new JSONParser();
             // WorkrInfoList.json parsing
-            HashMap<String, Integer> workerInfoMap = (HashMap<String, Integer>) parser.parse(new FileReader("../WorkerInfoList.json"));
+            HashMap<String, Integer> workerInfoMap = (HashMap<String, Integer>) parser.parse(new FileReader("WorkerInfoList.json"));
 
             PasswordCrackerTransport transport = new PasswordCrackerTransport(port, workerInfoMap);
 

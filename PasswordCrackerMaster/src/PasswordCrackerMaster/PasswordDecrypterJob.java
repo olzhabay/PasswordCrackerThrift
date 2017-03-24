@@ -18,9 +18,9 @@ public class PasswordDecrypterJob {
      *
      * @return the result value
      */
-    public String getPassword() {
+    public String getPassword() throws ExecutionException, InterruptedException {
         /** COMPLETE **/
-
+        return passwordFuture.get();
     }
     
     
@@ -34,6 +34,7 @@ public class PasswordDecrypterJob {
      */
     public void setPassword(String password) {
         /** COMPLETE **/
+        passwordFuture.complete(password);
     }
     
 }

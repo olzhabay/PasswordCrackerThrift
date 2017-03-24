@@ -13,10 +13,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.*;
 
 import static PasswordCrackerMaster.PasswordCrackerConts.WORKER_PORT;
 import static PasswordCrackerMaster.PasswordCrackerMasterServiceHandler.jobInfoMap;
@@ -70,9 +67,19 @@ public class PasswordCrackerMasterServiceHandler implements PasswordCrackerMaste
         PasswordDecrypterJob decryptJob = new PasswordDecrypterJob();
         jobInfoMap.put(encryptedPassword, decryptJob);
         /** COMPLETE **/
-        requestFindPassword(encryptedPassword, 0, PasswordCrackerConts.TOTAL_PASSWORD_RANGE_SIZE);
-        return decryptJob.getPassword();
+        workerPool.submit(() ->
+                requestFindPassword(encryptedPassword, 0, PasswordCrackerConts.TOTAL_PASSWORD_RANGE_SIZE));
+        try {
+            return decryptJob.getPassword();
+        } catch (ExecutionException e) {
+            e.printStackTrace();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        return null;
     }
+
+
 
     /*
      * The reportHeartBeat receives the heartBeat from workers.
@@ -126,7 +133,8 @@ public class PasswordCrackerMasterServiceHandler implements PasswordCrackerMaste
             workersRange.remove(workerAddress);
         }
         redistributionRanges.forEach((JobInfo job) ->
-                requestFindPassword(job.getEncryptedPassword(), job.getRangeBegin(), job.getRangeSize()));
+                workerPool.submit(() ->
+                        requestFindPassword(job.getEncryptedPassword(), job.getRangeBegin(), job.getRangeSize())));
     }
 
     /*
