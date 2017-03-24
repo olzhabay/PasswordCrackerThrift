@@ -1,9 +1,9 @@
 package PasswordCrackerWorker;
 
 import org.apache.thrift.TException;
+
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.concurrent.TimeUnit;
 
 import static PasswordCrackerWorker.PasswordCrackerConts.PASSWORD_CHARS;
 import static PasswordCrackerWorker.PasswordCrackerConts.PASSWORD_LEN;
@@ -43,6 +43,20 @@ public class PasswordCrackerUtil {
      */
     public static String findPasswordInRange(long rangeBegin, long rangeEnd, String encryptedPassword, TerminationChecker terminationChecker) throws TException, InterruptedException {
         /** COMPLETE **/
+        int[] passwordIterator = new int[PASSWORD_LEN];
+        transformDecToBase36(rangeBegin, passwordIterator);
+        for (long iterator = rangeBegin; iterator <= rangeEnd; iterator++) {
+            if (terminationChecker.isTerminated()) return null;
+            String password = transformIntToStr(passwordIterator);
+            String hashedPassword = encrypt(password, getMessageDigest());
+            if (hashedPassword.equals(encryptedPassword)) {
+                terminationChecker.setTerminated();
+                return password;
+            }
+            getNextCandidate(passwordIterator);
+        }
+        return null;
+
     }
 
     /* ###  transformDecToBase36  ###
@@ -51,14 +65,24 @@ public class PasswordCrackerUtil {
     */
     private static void transformDecToBase36(long numInDec, int[] numArrayInBase36) {
         /** COMPLETE **/
+        for (int index = PASSWORD_LEN - 1; index >= 0; index--) {
+            numArrayInBase36[index] = (int) (numInDec % 36);
+            numInDec = numInDec / 36;
+        }
     }
 
     //  ### getNextCandidate ###
     private static void getNextCandidate(int[] candidateChars) {
         /** OPTIONAL **/
+        int reminder = 1;
+        for (int index = PASSWORD_LEN - 1; index >= 0; index--) {
+            candidateChars[index] += reminder;
+            reminder = candidateChars[index] / 36;
+            candidateChars[index] %= 36;
+        }
     }
 
-    private static String transformIntoStr(int[] chars) {
+    private static String transformIntToStr(int[] chars) {
         char[] password = new char[chars.length];
         for (int i = 0; i < password.length; i++) {
             password[i] = PASSWORD_CHARS.charAt(chars[i]);

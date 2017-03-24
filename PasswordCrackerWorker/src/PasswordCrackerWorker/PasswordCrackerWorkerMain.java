@@ -84,5 +84,10 @@ public class PasswordCrackerWorkerMain {
 
     public static void transferHeartBeat(PasswordCrackerMasterService.Client masterService) {
         /** COMPLETE **/
+        try {
+            masterService.send_reportHeartBeat(workerHostAddress);
+        } catch (TException e) {
+            e.printStackTrace();
+        }
     }
 }
