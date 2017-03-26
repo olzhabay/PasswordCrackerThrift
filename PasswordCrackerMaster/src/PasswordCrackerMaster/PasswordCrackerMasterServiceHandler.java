@@ -13,10 +13,12 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Vector;
 import java.util.concurrent.*;
 
 import static PasswordCrackerMaster.PasswordCrackerConts.WORKER_PORT;
 import static PasswordCrackerMaster.PasswordCrackerMasterServiceHandler.jobInfoMap;
+import static PasswordCrackerMaster.PasswordCrackerMasterServiceHandler.activeJobs;
 import static PasswordCrackerMaster.PasswordCrackerMasterServiceHandler.workersAddressList;
 
 public class PasswordCrackerMasterServiceHandler implements PasswordCrackerMasterService.Iface {
@@ -26,7 +28,7 @@ public class PasswordCrackerMasterServiceHandler implements PasswordCrackerMaste
     public static ConcurrentHashMap<String, Long> latestHeartbeatInMillis = new ConcurrentHashMap<>(); // <workerAddress, time>
     public static ExecutorService workerPool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2);
     public static ScheduledExecutorService heartBeatCheckPool = Executors.newScheduledThreadPool(1);
-    public static ConcurrentHashMap<String, JobInfo> workersRange = new ConcurrentHashMap<>(); // <worker address, job information>
+    public static Vector<JobInfo> activeJobs = new Vector<>(); // <worker address, job information>
 
 
     /*
@@ -34,14 +36,20 @@ public class PasswordCrackerMasterServiceHandler implements PasswordCrackerMaste
      */
     static class JobInfo {
 
+        private String workerAddress;
         private long rangeBegin;
         private long rangeSize;
         private String encryptedPassword;
 
-        JobInfo(long rangeBegin, long rangeSize, String encryptedPassword) {
+        JobInfo(String workerAddress, long rangeBegin, long rangeSize, String encryptedPassword) {
+            this.workerAddress = workerAddress;
             this.rangeBegin = rangeBegin;
             this.rangeSize = rangeSize;
             this.encryptedPassword = encryptedPassword;
+        }
+
+        public String getWorkerAddress() {
+            return workerAddress;
         }
 
         public long getRangeBegin() {
@@ -64,11 +72,15 @@ public class PasswordCrackerMasterServiceHandler implements PasswordCrackerMaste
     @Override
     public String decrypt(String encryptedPassword)
             throws TException {
-        PasswordDecrypterJob decryptJob = new PasswordDecrypterJob();
-        jobInfoMap.put(encryptedPassword, decryptJob);
-        /** COMPLETE **/
-        workerPool.submit(() ->
-                requestFindPassword(encryptedPassword, 0, PasswordCrackerConts.TOTAL_PASSWORD_RANGE_SIZE));
+        PasswordDecrypterJob decryptJob;
+        if (!jobInfoMap.contains(encryptedPassword)) {
+            decryptJob = new PasswordDecrypterJob();
+            jobInfoMap.put(encryptedPassword, decryptJob);
+            workerPool.submit(() ->
+                    requestFindPassword(encryptedPassword, 0, PasswordCrackerConts.TOTAL_PASSWORD_RANGE_SIZE));
+        } else {
+            decryptJob = jobInfoMap.get(encryptedPassword);
+        }
         try {
             return decryptJob.getPassword();
         } catch (ExecutionException e) {
@@ -94,20 +106,21 @@ public class PasswordCrackerMasterServiceHandler implements PasswordCrackerMaste
     /*
      * The requestFindPassword requests workers to find password using RPC in asynchronous way.
     */
-    public static void requestFindPassword(String encryptedPassword, long rangeBegin, long subRangeSize) {
+    public static void requestFindPassword(String encryptedPassword, long rangeBegin, long rangeSize) {
         PasswordCrackerWorkerService.AsyncClient worker;
         FindPasswordMethodCallback findPasswordCallBack = new FindPasswordMethodCallback(encryptedPassword);
         try {
             int workerId = 0;
             for (String workerAddress : workersAddressList) {
-
+                long subRangeSize = (rangeSize + workersAddressList.size() - 1) / workersAddressList.size();
                 long subRangeBegin = rangeBegin + (workerId * subRangeSize);
                 long subRangeEnd = subRangeBegin + subRangeSize;
-                JobInfo range = new JobInfo(subRangeBegin, subRangeSize, encryptedPassword);
-                workersRange.put(workerAddress, range);
+                JobInfo jobInfo = new JobInfo(workerAddress, subRangeBegin, subRangeSize, encryptedPassword);
+                activeJobs.add(jobInfo);
 
                 worker = new PasswordCrackerWorkerService.AsyncClient(new TBinaryProtocol.Factory(), new TAsyncClientManager(), new TNonblockingSocket(workerAddress, WORKER_PORT));
                 worker.startFindPasswordInRange(subRangeBegin, subRangeEnd, encryptedPassword, findPasswordCallBack);
+                System.out.println("INFO: sending job to " + workerAddress + " range " + subRangeBegin + " - " + subRangeEnd + " password " + encryptedPassword);
                 workerId++;
             }
         }
@@ -126,15 +139,24 @@ public class PasswordCrackerMasterServiceHandler implements PasswordCrackerMaste
      */
     public static void redistributeFailedTask(ArrayList<String> failedWorkerIdList) {
         /** COMPLETE **/
-        ArrayList<JobInfo> redistributionRanges = new ArrayList<>();
-        for (String workerAddress:failedWorkerIdList) {
-            redistributionRanges.add(workersRange.get(workerAddress));
-            workersAddressList.remove(workerAddress);
-            workersRange.remove(workerAddress);
-        }
-        redistributionRanges.forEach((JobInfo job) ->
-                workerPool.submit(() ->
-                        requestFindPassword(job.getEncryptedPassword(), job.getRangeBegin(), job.getRangeSize())));
+        ArrayList<JobInfo> redistributionJobs = new ArrayList<>();
+        activeJobs.forEach((JobInfo jobInfo) -> {
+            failedWorkerIdList.forEach((String workerAddress) -> {
+                        if (jobInfo.getWorkerAddress().equals(workerAddress)) {
+                            System.out.println("INFO: redistributing job;" +
+                                    " [address] " + workerAddress +
+                                    " [password] " + jobInfo.getEncryptedPassword() +
+                                    " [range] " + jobInfo.getRangeBegin() +
+                                    " [size] " + jobInfo.getRangeSize());
+                            redistributionJobs.add(jobInfo);
+                            activeJobs.remove(jobInfo);
+                        }
+                    });
+                });
+        redistributionJobs.forEach((JobInfo jobInfo) -> {
+            workerPool.submit(() ->
+                    requestFindPassword(jobInfo.getEncryptedPassword(), jobInfo.getRangeBegin(), jobInfo.getRangeSize()));
+        });
     }
 
     /*
@@ -154,6 +176,7 @@ public class PasswordCrackerMasterServiceHandler implements PasswordCrackerMaste
         ArrayList<String> failedWorkerIdList = new ArrayList<>();
         latestHeartbeatInMillis.forEach((String node, Long time) -> {
             if (System.currentTimeMillis() - time > thresholdAge) {
+                System.out.println("INFO: failed worker " + node);
                 failedWorkerIdList.add(node);
             }
         });
@@ -184,6 +207,8 @@ class FindPasswordMethodCallback implements
             if (findPasswordResult != null) {
                 jobInfoMap.get(jobId).setPassword(findPasswordResult);
                 jobTermination(jobId);
+                System.out.println("INFO: Job finished " + jobId);
+                activeJobs.removeIf(jobInfo -> jobInfo.getEncryptedPassword().equals(jobId));
             }
         }
         catch (TException e) {
@@ -201,13 +226,14 @@ class FindPasswordMethodCallback implements
      */
     private void jobTermination(String jobId) {
         try {
-            PasswordCrackerWorkerService.AsyncClient worker = null;
+            PasswordCrackerWorkerService.AsyncClient worker;
             for (String workerAddress : workersAddressList) {
                 worker = new PasswordCrackerWorkerService.AsyncClient(
                         new TBinaryProtocol.Factory(),
                         new TAsyncClientManager(),
                         new TNonblockingSocket(workerAddress, WORKER_PORT));
                 /** COMPLETE **/
+                System.out.println("INFO: terminating job " + jobId + " on " + workerAddress);
                 worker.reportTermination(jobId, this);
             }
         }

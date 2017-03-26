@@ -27,8 +27,6 @@ public class PasswordCrackerClient {
             PasswordCrackerMasterService.Client passwordCrackerService = new PasswordCrackerMasterService.Client(protocol);
             String password = passwordCrackerService.decrypt(encryptedPassword);
             System.out.println("encryptedPassword : " + encryptedPassword + "\npassword : " + password);
-
-            System.out.println("encryptedPassword : " + encryptedPassword + "\npassword : " + password);
             transport.close();
         } catch (TTransportException e) {
             e.printStackTrace();

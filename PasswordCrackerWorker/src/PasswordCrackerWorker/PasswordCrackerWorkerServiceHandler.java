@@ -41,6 +41,7 @@ public class PasswordCrackerWorkerServiceHandler implements PasswordCrackerWorke
             if (!terminationCheckerMap.containsKey(encryptedPassword)) {
                 terminationCheckerMap.put(encryptedPassword, new TerminationChecker());
             }
+            System.out.println("INFO: accepted job " + encryptedPassword + " range " + rangeBegin + " " + rangeEnd);
 
             TerminationChecker terminationChecker = terminationCheckerMap.get(encryptedPassword);
             Future<String> workerFuture = workerPool.submit(() -> findPasswordInRange(rangeBegin, rangeEnd, encryptedPassword, terminationChecker));
