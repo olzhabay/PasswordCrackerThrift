@@ -72,14 +72,16 @@ public class PasswordCrackerMasterServiceHandler implements PasswordCrackerMaste
     @Override
     public String decrypt(String encryptedPassword)
             throws TException {
-        PasswordDecrypterJob decryptJob;
-        if (!jobInfoMap.contains(encryptedPassword)) {
+        System.out.println("INFO: New job " + encryptedPassword);
+        PasswordDecrypterJob decryptJob = jobInfoMap.get(encryptedPassword);
+        if (decryptJob == null) {
+            System.out.println("INFO: Starting new computation");
             decryptJob = new PasswordDecrypterJob();
             jobInfoMap.put(encryptedPassword, decryptJob);
             workerPool.submit(() ->
                     requestFindPassword(encryptedPassword, 0, PasswordCrackerConts.TOTAL_PASSWORD_RANGE_SIZE));
         } else {
-            decryptJob = jobInfoMap.get(encryptedPassword);
+            System.out.println("INFO: Retrieving from cached data");
         }
         try {
             return decryptJob.getPassword();

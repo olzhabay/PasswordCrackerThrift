@@ -22,8 +22,8 @@ public class PasswordDecrypterJob {
         /** COMPLETE **/
         return passwordFuture.get();
     }
-    
-    
+
+
     /**
      * complete(T value)
      * If not already completed, sets the value returned by get() and related methods to the given value.
