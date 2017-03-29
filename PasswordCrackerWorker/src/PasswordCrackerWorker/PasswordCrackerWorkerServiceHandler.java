@@ -65,6 +65,7 @@ public class PasswordCrackerWorkerServiceHandler implements PasswordCrackerWorke
     @Override
     public void reportTermination(String jobId) throws TException {
         /** COMPLETE **/
+        System.out.println("INFO: master terminating job " + jobId);
         terminationCheckerMap.get(jobId).setTerminated();
     }
 

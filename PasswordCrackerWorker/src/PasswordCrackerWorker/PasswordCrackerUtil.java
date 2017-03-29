@@ -43,6 +43,7 @@ public class PasswordCrackerUtil {
      */
     public static String findPasswordInRange(long rangeBegin, long rangeEnd, String encryptedPassword, TerminationChecker terminationChecker) throws TException, InterruptedException {
         /** COMPLETE **/
+        System.out.println("INFO: start " + rangeBegin + " " + rangeEnd);
         int[] passwordIterator = new int[PASSWORD_LEN];
         transformDecToBase36(rangeBegin, passwordIterator);
         for (long iterator = rangeBegin; iterator <= rangeEnd; iterator++) {
@@ -51,12 +52,13 @@ public class PasswordCrackerUtil {
             String hashedPassword = encrypt(password, getMessageDigest());
             if (hashedPassword.equals(encryptedPassword)) {
                 terminationChecker.setTerminated();
+                System.out.println("INFO: complete with success " + password);
                 return password;
             }
             getNextCandidate(passwordIterator);
         }
+        System.out.println("INFO: complete with no success");
         return null;
-
     }
 
     /* ###  transformDecToBase36  ###
