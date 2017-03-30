@@ -25,7 +25,9 @@ public class PasswordCrackerClient {
             TProtocol protocol = new TBinaryProtocol(transport);
             
             PasswordCrackerMasterService.Client passwordCrackerService = new PasswordCrackerMasterService.Client(protocol);
+            // Decrypt call to master
             String password = passwordCrackerService.decrypt(encryptedPassword);
+            // Decrypt call to master
             System.out.println("encryptedPassword : " + encryptedPassword + "\npassword : " + password);
             transport.close();
         } catch (TTransportException e) {
